@@ -13,4 +13,5 @@ func TestInDisk(t *testing.T) {
 	biff.AssertNil(err)
 
 	SuitePersistencer(p, t)
+	SuiteOptimisticLocking(p, t)
 }

@@ -56,7 +56,8 @@ func NewInPostgres(connection string) (*InPostgres, error) {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS "items" (
 		    id       VARCHAR(36) PRIMARY KEY,
-		    record   JSONB
+		    record   JSONB,
+		    version  bigint
 		);
 	`)
 	if err != nil {
@@ -98,21 +99,27 @@ func parseConnection(connection string) map[string]string {
 
 func (f *InPostgres) List(ctx context.Context) ([]*ItemWithId, error) {
 
-	rows, err := f.db.QueryContext(ctx, `SELECT record FROM "items";`)
+	rows, err := f.db.QueryContext(ctx, `SELECT id, record, version FROM "items";`)
 	if err != nil {
 		return nil, err
 	}
 
 	result := []*ItemWithId{}
 	for rows.Next() {
+		id := []byte{}
 		record := []byte{}
-		err := rows.Scan(&record)
+		version := int64(0)
+		err := rows.Scan(&id, &record, &version)
 		if err != nil {
 			return nil, err
 		}
 
-		item := &ItemWithId{}
-		err = json.Unmarshal(record, &item)
+		item := &ItemWithId{
+			Id:      string(id),
+			Item:    Item{},
+			Version: version,
+		}
+		err = json.Unmarshal(record, &item.Item)
 		if err != nil {
 			return nil, err
 		}
@@ -124,21 +131,29 @@ func (f *InPostgres) List(ctx context.Context) ([]*ItemWithId, error) {
 
 func (f *InPostgres) Put(ctx context.Context, item *ItemWithId) error {
 
-	itemJson, err := json.Marshal(item)
+	itemJson, err := json.Marshal(item.Item)
 	if err != nil {
 		return err
 	}
 
-	_, err = f.db.ExecContext(ctx, `
-		INSERT INTO "items" (id, record) VALUES ($1, $2::jsonb)
+	result, err := f.db.ExecContext(ctx, `
+		INSERT INTO "items" (id, record, version) VALUES ($1, $2::jsonb, $4)
 		ON CONFLICT (ID)
-		DO UPDATE SET record = $2
-	`, item.Id, string(itemJson))
+		DO UPDATE SET record = $2, version = $4 WHERE items.version = $3
+	`, item.Id, string(itemJson), item.Version, item.Version+1)
 	if err != nil {
 		return err
 	}
 
-	// todo: check `result.RowsAffected() == 1` ???
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrVersionGone
+	}
+
+	item.Version++
 
 	return nil
 }
@@ -146,11 +161,12 @@ func (f *InPostgres) Put(ctx context.Context, item *ItemWithId) error {
 func (f *InPostgres) Get(ctx context.Context, id string) (*ItemWithId, error) {
 
 	row := f.db.QueryRowContext(ctx, `
-		SELECT record FROM "items" WHERE id = $1;
+		SELECT  record, version FROM "items" WHERE id = $1;
 	`, id)
 
 	record := []byte{}
-	err := row.Scan(&record)
+	version := int64(0)
+	err := row.Scan(&record, &version)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -158,8 +174,11 @@ func (f *InPostgres) Get(ctx context.Context, id string) (*ItemWithId, error) {
 		return nil, err
 	}
 
-	item := &ItemWithId{}
-	err = json.Unmarshal(record, item)
+	item := &ItemWithId{
+		Id:      id,
+		Version: version,
+	}
+	err = json.Unmarshal(record, &item.Item)
 	if err != nil {
 		return nil, err
 	}

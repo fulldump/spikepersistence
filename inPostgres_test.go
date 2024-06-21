@@ -38,4 +38,5 @@ func TestInPostgres(t *testing.T) {
 	biff.AssertNil(err)
 
 	SuitePersistencer(p, t)
+	SuiteOptimisticLocking(p, t)
 }

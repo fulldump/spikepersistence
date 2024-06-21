@@ -75,8 +75,36 @@ func (f *InMongoDB) List(ctx context.Context) ([]*ItemWithId, error) {
 }
 
 func (f *InMongoDB) Put(ctx context.Context, item *ItemWithId) error {
-	_, err := f.database.Collection("items").UpdateByID(ctx, item.Id, bson.M{"$set": item}, options.Update().SetUpsert(true))
-	return err
+	filter := bson.M{
+		"_id": item.Id,
+	}
+	if item.Version > 0 {
+		filter["version"] = item.Version
+
+	}
+	update := bson.M{
+		"$set": ItemWithId{
+			Id:      item.Id,
+			Item:    item.Item,
+			Version: item.Version + 1,
+		},
+	}
+
+	result, err := f.database.Collection("items").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+
+	if mongo.IsDuplicateKeyError(err) {
+		return ErrVersionGone
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if result.MatchedCount == 0 && result.UpsertedCount == 0 {
+		return ErrVersionGone
+	}
+
+	return nil
 }
 
 func (f *InMongoDB) Get(ctx context.Context, id string) (*ItemWithId, error) {

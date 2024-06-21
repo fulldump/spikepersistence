@@ -36,7 +36,17 @@ func (f *InMemory) Put(ctx context.Context, item *ItemWithId) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
-	f.Items[item.Id] = item
+	if oldItem, ok := f.Items[item.Id]; ok {
+		if oldItem.Version != item.Version {
+			return ErrVersionGone
+		}
+	}
+
+	f.Items[item.Id] = &ItemWithId{
+		Id:      item.Id,
+		Item:    item.Item,
+		Version: item.Version + 1,
+	}
 	return nil
 }
 
@@ -44,7 +54,16 @@ func (f *InMemory) Get(ctx context.Context, id string) (*ItemWithId, error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
-	return f.Items[id], nil
+	item, ok := f.Items[id]
+	if !ok {
+		return nil, nil
+	}
+
+	return &ItemWithId{
+		Id:      item.Id,
+		Item:    item.Item,
+		Version: item.Version,
+	}, nil
 }
 
 func (f *InMemory) Delete(ctx context.Context, id string) error {

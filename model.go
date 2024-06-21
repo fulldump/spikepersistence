@@ -5,6 +5,7 @@ type Item struct {
 	Description string     `json:"description"`
 	Version     string     `json:"version"`
 	Subitems    []*SubItem `json:"subitems"`
+	Counter     int        `json:"counter"`
 }
 
 type SubItem struct {

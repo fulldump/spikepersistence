@@ -7,4 +7,5 @@ func TestInMemory(t *testing.T) {
 	p := NewInMemory()
 
 	SuitePersistencer(p, t)
+	SuiteOptimisticLocking(p, t)
 }

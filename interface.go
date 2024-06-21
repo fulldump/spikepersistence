@@ -2,12 +2,16 @@ package persistence
 
 import (
 	"context"
+	"errors"
 )
 
 type ItemWithId struct {
-	Id   string `json:"id"`
-	Item `bson:",inline"`
+	Id      string `json:"id"`
+	Item    `bson:",inline"`
+	Version int64 `json:"-" bson:"version"`
 }
+
+var ErrVersionGone = errors.New("version gone")
 
 type Persistencer interface {
 	List(ctx context.Context) ([]*ItemWithId, error)

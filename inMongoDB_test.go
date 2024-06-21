@@ -55,4 +55,5 @@ func TestMongodb(t *testing.T) {
 	biff.AssertNil(err)
 
 	SuitePersistencer(p, t)
+	SuiteOptimisticLocking(p, t)
 }
