@@ -1,14 +1,22 @@
 package persistence
 
+import (
+	"time"
+)
+
 type Item struct {
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Version     string     `json:"version"`
-	Subitems    []*SubItem `json:"subitems"`
-	Counter     int        `json:"counter"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Tasks       []*Task   `json:"tasks"`
 }
 
-type SubItem struct {
-	Field1 string `json:"field1"`
-	Field2 string `json:"field2"`
+type Task struct {
+	Id          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }

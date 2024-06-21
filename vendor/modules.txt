@@ -1,6 +1,9 @@
 # github.com/fulldump/biff v1.3.0
 ## explicit; go 1.14
 github.com/fulldump/biff
+# github.com/fulldump/box v0.4.1
+## explicit; go 1.19
+github.com/fulldump/box
 # github.com/golang/snappy v0.0.4
 ## explicit
 github.com/golang/snappy

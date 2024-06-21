@@ -4,6 +4,7 @@ go 1.22.3
 
 require (
 	github.com/fulldump/biff v1.3.0
+	github.com/fulldump/box v0.4.1
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	go.mongodb.org/mongo-driver v1.15.0
