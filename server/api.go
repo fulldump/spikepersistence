@@ -21,5 +21,7 @@ func NewApi(p persistence.Persistencer) *box.B {
 	b.Handle("DELETE", "/projects/{project_id}", DeleteProject)
 	b.Handle("PATCH", "/projects/{project_id}", ModifyProject)
 
+	b.Handle("GET", "/openapi.json", OpenApi(b)).WithName("OpenApi")
+
 	return b
 }
