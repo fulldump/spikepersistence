@@ -1,0 +1,301 @@
+package persistence
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"net/url"
+)
+
+type ConfigInceptionDB struct {
+	Base       string `json:"base"`
+	Collection string `json:"collection"`
+	ApiKey     string `json:"api_key"`
+	ApiSecret  string `json:"api_secret"`
+}
+
+type InInceptionDB[T any] struct {
+	config     *ConfigInceptionDB
+	httpClient *http.Client
+}
+
+func NewInInceptionDB[T any](config *ConfigInceptionDB) *InInceptionDB[T] {
+	if config.Collection == "" {
+		config.Collection = "items"
+	}
+	result := &InInceptionDB[T]{
+		config:     config,
+		httpClient: http.DefaultClient,
+	}
+	result.dropCollection()
+	result.ensureCollection()
+
+	return result
+}
+
+type FindQuery struct {
+	Filter  map[string]interface{} `json:"filter,omitempty"`
+	Limit   int                    `json:"limit,omitempty"`
+	Skip    int                    `json:"skip,omitempty"`
+	Reverse bool                   `json:"reverse,omitempty"`
+}
+
+func (p *InInceptionDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
+	query := FindQuery{
+		Filter: map[string]interface{}{},
+		Limit:  -1,
+	}
+	payload, err := json.Marshal(query)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":find"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("list: unexpected HTTP status: " + resp.Status)
+	}
+
+	var items []*ItemWithId[T]
+	decoder := json.NewDecoder(resp.Body)
+	// InceptionDB returns a stream of objects, one per line (JSON Lines)
+	for {
+		var item ItemWithId[T]
+		err := decoder.Decode(&item)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, &item)
+	}
+	return items, nil
+}
+
+func (p *InInceptionDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
+
+	newItem := &ItemWithId[T]{
+		Id:      item.Id,
+		Item:    item.Item,
+		Version: item.Version + 1,
+	}
+
+	if item.Version == 0 {
+		// Assume the document is new
+
+		payload, err := json.Marshal(newItem)
+		if err != nil {
+			return err
+		}
+		endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":insert"
+		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Api-Key", p.config.ApiKey)
+		req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+		resp, err := p.httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}()
+
+		if resp.StatusCode != http.StatusCreated {
+			return errors.New("put (insert): unexpected HTTP status: " + resp.Status)
+		}
+
+		item.Version++ // Update version in the original object
+		return nil
+	}
+
+	filter := map[string]interface{}{
+		"id":      item.Id,
+		"version": item.Version,
+	}
+
+	// Use patch endpoint to update the document. The filter identifies id and actual version.
+	patchQuery := map[string]interface{}{
+		"filter": filter,
+		"patch":  newItem,
+	}
+	payload, err := json.Marshal(patchQuery)
+	if err != nil {
+		return err
+	}
+	endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":patch"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+	}()
+
+	err = json.NewDecoder(resp.Body).Decode(&item)
+	if err == io.EOF {
+		return ErrVersionGone
+	}
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("put (patch): unexpected HTTP status: " + resp.Status)
+	}
+
+	item.Version++
+	return nil
+}
+
+func (p *InInceptionDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+	query := FindQuery{
+		Filter: map[string]interface{}{
+			"id": id,
+		},
+		Limit: 1,
+	}
+	payload, err := json.Marshal(query)
+	if err != nil {
+		return nil, err
+	}
+
+	endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":find"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, errors.New("get: unexpected HTTP status: " + resp.Status)
+	}
+
+	decoder := json.NewDecoder(resp.Body)
+	var item ItemWithId[T]
+	if err := decoder.Decode(&item); err != nil {
+		if err == io.EOF {
+			// Document not found
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (p *InInceptionDB[T]) Delete(ctx context.Context, id string) error {
+	query := FindQuery{
+		Filter: map[string]interface{}{
+			"id": id,
+		},
+	}
+	payload, err := json.Marshal(query)
+	if err != nil {
+		return err
+	}
+
+	endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":remove"
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return errors.New("delete: unexpected HTTP status: " + resp.Status)
+	}
+	return nil
+}
+
+func (p *InInceptionDB[T]) ensureCollection() error {
+	endpoint := p.config.Base + "/collections"
+
+	payload, err := json.Marshal(map[string]interface{}{
+		"name": p.config.Collection,
+	}) // todo: handle err
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode == http.StatusCreated {
+		return nil
+	}
+
+	io.Copy(io.Discard, resp.Body)
+	return resp.Body.Close()
+}
+
+func (p *InInceptionDB[T]) dropCollection() error {
+	endpoint := p.config.Base + "/collections/" + url.PathEscape(p.config.Collection) + ":dropCollection"
+
+	req, err := http.NewRequest("POST", endpoint, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Api-Key", p.config.ApiKey)
+	req.Header.Set("Api-Secret", p.config.ApiSecret)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	io.Copy(io.Discard, resp.Body)
+
+	return nil
+}

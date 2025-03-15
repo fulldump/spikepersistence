@@ -11,6 +11,7 @@ services:
     links:
       - mongodb
       - postgres
+      - inceptiondb
   mongodb:
     image: mongo:6-jammy
     ports:
@@ -25,6 +26,12 @@ services:
       - '5432:5432'
     volumes:
       - dbdata7:/var/lib/postgresql/data
+  inceptiondb:
+    image: fulldumpnet/inceptiondb:latest
+    environment:
+      HTTPADDR: ":1212"
+    ports:
+      - '1212:1212'
 volumes:
   dbdata6:
   gocache:
