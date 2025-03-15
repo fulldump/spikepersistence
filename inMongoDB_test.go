@@ -51,7 +51,7 @@ func TestMongodb(t *testing.T) {
 	connection += "/" + dbname
 	t.Logf("Using connection: '%s'", connection)
 
-	p, err := NewInMongoDB(connection)
+	p, err := NewInMongoDB[Item](connection)
 	biff.AssertNil(err)
 
 	SuitePersistencer(p, t)

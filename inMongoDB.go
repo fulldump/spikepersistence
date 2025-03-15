@@ -10,13 +10,13 @@ import (
 	"go.mongodb.org/mongo-driver/x/mongo/driver/connstring"
 )
 
-type InMongoDB struct {
+type InMongoDB[T any] struct {
 	connection string
 	client     *mongo.Client
 	database   *mongo.Database
 }
 
-func NewInMongoDB(connection string) (*InMongoDB, error) {
+func NewInMongoDB[T any](connection string) (*InMongoDB[T], error) {
 
 	cs, err := connstring.ParseAndValidate(connection)
 	if err != nil {
@@ -45,14 +45,14 @@ func NewInMongoDB(connection string) (*InMongoDB, error) {
 		return nil, err
 	}
 
-	return &InMongoDB{
+	return &InMongoDB[T]{
 		connection: connection,
 		client:     client, // might not be needed
 		database:   database,
 	}, nil
 }
 
-func (f *InMongoDB) List(ctx context.Context) ([]*ItemWithId, error) {
+func (f *InMongoDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 
 	cur, err := f.database.Collection("items").Find(ctx, bson.M{})
 	if err != nil {
@@ -60,10 +60,10 @@ func (f *InMongoDB) List(ctx context.Context) ([]*ItemWithId, error) {
 	}
 	defer cur.Close(context.Background())
 
-	result := []*ItemWithId{}
+	result := []*ItemWithId[T]{}
 
 	for cur.Next(context.Background()) {
-		item := &ItemWithId{}
+		item := &ItemWithId[T]{}
 		err := cur.Decode(item)
 		if err != nil {
 			return nil, err
@@ -74,7 +74,7 @@ func (f *InMongoDB) List(ctx context.Context) ([]*ItemWithId, error) {
 	return result, nil
 }
 
-func (f *InMongoDB) Put(ctx context.Context, item *ItemWithId) error {
+func (f *InMongoDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 	filter := bson.M{
 		"_id": item.Id,
 	}
@@ -83,7 +83,7 @@ func (f *InMongoDB) Put(ctx context.Context, item *ItemWithId) error {
 
 	}
 	update := bson.M{
-		"$set": ItemWithId{
+		"$set": ItemWithId[T]{
 			Id:      item.Id,
 			Item:    item.Item,
 			Version: item.Version + 1,
@@ -107,8 +107,8 @@ func (f *InMongoDB) Put(ctx context.Context, item *ItemWithId) error {
 	return nil
 }
 
-func (f *InMongoDB) Get(ctx context.Context, id string) (*ItemWithId, error) {
-	result := &ItemWithId{}
+func (f *InMongoDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+	result := &ItemWithId[T]{}
 	err := f.database.Collection("items").FindOne(ctx, bson.M{"id": id}).Decode(result)
 	if err == mongo.ErrNoDocuments {
 		return nil, nil
@@ -116,7 +116,7 @@ func (f *InMongoDB) Get(ctx context.Context, id string) (*ItemWithId, error) {
 	return result, err
 }
 
-func (f *InMongoDB) Delete(ctx context.Context, id string) error {
+func (f *InMongoDB[T]) Delete(ctx context.Context, id string) error {
 	_, err := f.database.Collection("items").DeleteOne(ctx, bson.M{"id": id})
 	return err
 }

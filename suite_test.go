@@ -12,7 +12,19 @@ import (
 	. "github.com/fulldump/biff"
 )
 
-func SuitePersistencer(p Persistencer, t *testing.T) {
+type Item struct {
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Subitems    []*SubItem `json:"subitems"`
+	Counter     int        `json:"counter"`
+}
+
+type SubItem struct {
+	Field1 string `json:"field1"`
+	Field2 string `json:"field2"`
+}
+
+func SuitePersistencer(p Persistencer[Item], t *testing.T) {
 
 	ctx := context.Background()
 
@@ -22,7 +34,7 @@ func SuitePersistencer(p Persistencer, t *testing.T) {
 		AssertEqual(len(listResult), 0)
 	})
 
-	item1 := &ItemWithId{
+	item1 := &ItemWithId[Item]{
 		Id: "1",
 		Item: Item{
 			Title: "Title 1",
@@ -50,7 +62,7 @@ func SuitePersistencer(p Persistencer, t *testing.T) {
 		AssertEqual(listResult[0].Item, item1.Item)
 	})
 
-	item1.Title = "Title 1 updated"
+	item1.Item.Title = "Title 1 updated"
 
 	t.Run("Update one", func(t *testing.T) {
 		putErr := p.Put(ctx, item1)
@@ -64,7 +76,7 @@ func SuitePersistencer(p Persistencer, t *testing.T) {
 
 	})
 
-	item2 := &ItemWithId{
+	item2 := &ItemWithId[Item]{
 		Id: "2",
 		Item: Item{
 			Title: "Title 2",
@@ -110,7 +122,7 @@ func SuitePersistencer(p Persistencer, t *testing.T) {
 
 			id := fmt.Sprintf("item-%d", i)
 
-			p.Put(ctx, &ItemWithId{
+			p.Put(ctx, &ItemWithId[Item]{
 				Id: id,
 				Item: Item{
 					Title: id,
@@ -128,13 +140,13 @@ func SuitePersistencer(p Persistencer, t *testing.T) {
 
 }
 
-func SuiteOptimisticLocking(p Persistencer, t *testing.T) {
+func SuiteOptimisticLocking(p Persistencer[Item], t *testing.T) {
 
 	ctx := context.Background()
 
 	t.Run("Concurrency - optimistic", func(t *testing.T) {
 
-		err := p.Put(ctx, &ItemWithId{
+		err := p.Put(ctx, &ItemWithId[Item]{
 			Id: "1",
 			Item: Item{
 				Title:   "Title 1",
@@ -145,11 +157,11 @@ func SuiteOptimisticLocking(p Persistencer, t *testing.T) {
 
 		itema, errGet := p.Get(ctx, "1")
 		AssertNil(errGet)
-		itema.Counter++
+		itema.Item.Counter++
 
 		itemb, errGet := p.Get(ctx, "1")
 		AssertNil(errGet)
-		itemb.Counter++
+		itemb.Item.Counter++
 
 		erra := p.Put(ctx, itema)
 		AssertNil(erra)
@@ -165,7 +177,7 @@ func SuiteOptimisticLocking(p Persistencer, t *testing.T) {
 	t.Run("Concurrency - optimistic2", func(t *testing.T) {
 		w := &sync.WaitGroup{}
 
-		err := p.Put(ctx, &ItemWithId{
+		err := p.Put(ctx, &ItemWithId[Item]{
 			Id: "optimistic-2",
 			Item: Item{
 				Title:   "Title 1",
@@ -184,7 +196,7 @@ func SuiteOptimisticLocking(p Persistencer, t *testing.T) {
 
 				for {
 					item, _ := p.Get(ctx, "optimistic-2")
-					item.Counter++
+					item.Item.Counter++
 
 					errPut := p.Put(ctx, item)
 					if errPut == ErrVersionGone {
@@ -200,11 +212,11 @@ func SuiteOptimisticLocking(p Persistencer, t *testing.T) {
 
 		w.Wait()
 
+		fmt.Println("COLLISIONS:", collisions)
+
 		finalItem, err := p.Get(ctx, "optimistic-2")
 		AssertNil(err)
-		AssertEqual(finalItem.Counter, workers)
-
-		fmt.Println("TOTAL:", collisions)
+		AssertEqual(finalItem.Item.Counter, workers)
 	})
 
 }

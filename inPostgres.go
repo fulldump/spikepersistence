@@ -9,12 +9,12 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type InPostgres struct {
+type InPostgres[T any] struct {
 	connection string
 	db         *sql.DB
 }
 
-func NewInPostgres(connection string) (*InPostgres, error) {
+func NewInPostgres[T any](connection string) (*InPostgres[T], error) {
 
 	db, err := sql.Open("postgres", connection)
 	if err != nil {
@@ -64,7 +64,7 @@ func NewInPostgres(connection string) (*InPostgres, error) {
 		return nil, err // could not create database
 	}
 
-	return &InPostgres{
+	return &InPostgres[T]{
 		db:         db,
 		connection: connection,
 	}, nil
@@ -97,14 +97,14 @@ func parseConnection(connection string) map[string]string {
 	return result
 }
 
-func (f *InPostgres) List(ctx context.Context) ([]*ItemWithId, error) {
+func (f *InPostgres[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 
 	rows, err := f.db.QueryContext(ctx, `SELECT id, record, version FROM "items";`)
 	if err != nil {
 		return nil, err
 	}
 
-	result := []*ItemWithId{}
+	result := []*ItemWithId[T]{}
 	for rows.Next() {
 		id := []byte{}
 		record := []byte{}
@@ -114,9 +114,9 @@ func (f *InPostgres) List(ctx context.Context) ([]*ItemWithId, error) {
 			return nil, err
 		}
 
-		item := &ItemWithId{
-			Id:      string(id),
-			Item:    Item{},
+		item := &ItemWithId[T]{
+			Id: string(id),
+			// Item:    T{},
 			Version: version,
 		}
 		err = json.Unmarshal(record, &item.Item)
@@ -129,7 +129,7 @@ func (f *InPostgres) List(ctx context.Context) ([]*ItemWithId, error) {
 	return result, nil
 }
 
-func (f *InPostgres) Put(ctx context.Context, item *ItemWithId) error {
+func (f *InPostgres[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 
 	itemJson, err := json.Marshal(item.Item)
 	if err != nil {
@@ -158,7 +158,7 @@ func (f *InPostgres) Put(ctx context.Context, item *ItemWithId) error {
 	return nil
 }
 
-func (f *InPostgres) Get(ctx context.Context, id string) (*ItemWithId, error) {
+func (f *InPostgres[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
 
 	row := f.db.QueryRowContext(ctx, `
 		SELECT  record, version FROM "items" WHERE id = $1;
@@ -174,7 +174,7 @@ func (f *InPostgres) Get(ctx context.Context, id string) (*ItemWithId, error) {
 		return nil, err
 	}
 
-	item := &ItemWithId{
+	item := &ItemWithId[T]{
 		Id:      id,
 		Version: version,
 	}
@@ -186,7 +186,7 @@ func (f *InPostgres) Get(ctx context.Context, id string) (*ItemWithId, error) {
 	return item, nil
 }
 
-func (f *InPostgres) Delete(ctx context.Context, id string) error {
+func (f *InPostgres[T]) Delete(ctx context.Context, id string) error {
 
 	_, err := f.db.ExecContext(ctx, `
 		DELETE FROM "items" 

@@ -5,23 +5,23 @@ import (
 	"sync"
 )
 
-type InMemory struct {
-	Items map[string]*ItemWithId
+type InMemory[T any] struct {
+	Items map[string]*ItemWithId[T]
 	mutex sync.RWMutex
 }
 
-func NewInMemory() *InMemory {
-	return &InMemory{
-		Items: map[string]*ItemWithId{},
+func NewInMemory[T any]() *InMemory[T] {
+	return &InMemory[T]{
+		Items: map[string]*ItemWithId[T]{},
 	}
 }
 
-func (f *InMemory) List(ctx context.Context) ([]*ItemWithId, error) {
+func (f *InMemory[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
-	result := make([]*ItemWithId, len(f.Items))
+	result := make([]*ItemWithId[T], len(f.Items))
 
 	i := -1
 	for _, f := range f.Items {
@@ -32,7 +32,7 @@ func (f *InMemory) List(ctx context.Context) ([]*ItemWithId, error) {
 	return result, nil
 }
 
-func (f *InMemory) Put(ctx context.Context, item *ItemWithId) error {
+func (f *InMemory[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
@@ -42,7 +42,7 @@ func (f *InMemory) Put(ctx context.Context, item *ItemWithId) error {
 		}
 	}
 
-	f.Items[item.Id] = &ItemWithId{
+	f.Items[item.Id] = &ItemWithId[T]{
 		Id:      item.Id,
 		Item:    item.Item,
 		Version: item.Version + 1,
@@ -50,7 +50,7 @@ func (f *InMemory) Put(ctx context.Context, item *ItemWithId) error {
 	return nil
 }
 
-func (f *InMemory) Get(ctx context.Context, id string) (*ItemWithId, error) {
+func (f *InMemory[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
@@ -59,14 +59,14 @@ func (f *InMemory) Get(ctx context.Context, id string) (*ItemWithId, error) {
 		return nil, nil
 	}
 
-	return &ItemWithId{
+	return &ItemWithId[T]{
 		Id:      item.Id,
 		Item:    item.Item,
 		Version: item.Version,
 	}, nil
 }
 
-func (f *InMemory) Delete(ctx context.Context, id string) error {
+func (f *InMemory[T]) Delete(ctx context.Context, id string) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 

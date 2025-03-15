@@ -8,7 +8,7 @@ import (
 
 func TestInDisk(t *testing.T) {
 
-	p, err := NewInDisk(t.TempDir())
+	p, err := NewInDisk[Item](t.TempDir())
 
 	biff.AssertNil(err)
 

@@ -5,17 +5,17 @@ import (
 	"errors"
 )
 
-type ItemWithId struct {
+type ItemWithId[T any] struct {
 	Id      string `json:"id"`
-	Item    `bson:",inline"`
-	Version int64 `json:"-" bson:"version"`
+	Item    T      `json:"item" bson:",inline"`
+	Version int64  `json:"version" bson:"version"`
 }
 
 var ErrVersionGone = errors.New("version gone")
 
-type Persistencer interface {
-	List(ctx context.Context) ([]*ItemWithId, error)
-	Put(ctx context.Context, item *ItemWithId) error
-	Get(ctx context.Context, id string) (*ItemWithId, error)
+type Persistencer[T any] interface {
+	List(ctx context.Context) ([]*ItemWithId[T], error)
+	Put(ctx context.Context, item *ItemWithId[T]) error
+	Get(ctx context.Context, id string) (*ItemWithId[T], error)
 	Delete(ctx context.Context, id string) error
 }
