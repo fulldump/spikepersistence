@@ -10,11 +10,12 @@ import (
 )
 
 type InPostgres[T any] struct {
+	table      string
 	connection string
 	db         *sql.DB
 }
 
-func NewInPostgres[T any](connection string) (*InPostgres[T], error) {
+func NewInPostgres[T any](table, connection string) (*InPostgres[T], error) {
 
 	db, err := sql.Open("postgres", connection)
 	if err != nil {
@@ -52,9 +53,9 @@ func NewInPostgres[T any](connection string) (*InPostgres[T], error) {
 		}
 	}
 
-	// ensure table `items`
+	// ensure table
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS "items" (
+		CREATE TABLE IF NOT EXISTS "` + table + `" (
 		    id       VARCHAR(36) PRIMARY KEY,
 		    record   JSONB,
 		    version  bigint
@@ -65,6 +66,7 @@ func NewInPostgres[T any](connection string) (*InPostgres[T], error) {
 	}
 
 	return &InPostgres[T]{
+		table:      table,
 		db:         db,
 		connection: connection,
 	}, nil
@@ -99,7 +101,7 @@ func parseConnection(connection string) map[string]string {
 
 func (f *InPostgres[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 
-	rows, err := f.db.QueryContext(ctx, `SELECT id, record, version FROM "items";`)
+	rows, err := f.db.QueryContext(ctx, `SELECT id, record, version FROM "`+f.table+`";`)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +139,9 @@ func (f *InPostgres[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 	}
 
 	result, err := f.db.ExecContext(ctx, `
-		INSERT INTO "items" (id, record, version) VALUES ($1, $2::jsonb, $4)
+		INSERT INTO "`+f.table+`" (id, record, version) VALUES ($1, $2::jsonb, $4)
 		ON CONFLICT (ID)
-		DO UPDATE SET record = $2, version = $4 WHERE items.version = $3
+		DO UPDATE SET record = $2, version = $4 WHERE `+f.table+`.version = $3
 	`, item.Id, string(itemJson), item.Version, item.Version+1)
 	if err != nil {
 		return err
@@ -161,7 +163,7 @@ func (f *InPostgres[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 func (f *InPostgres[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
 
 	row := f.db.QueryRowContext(ctx, `
-		SELECT  record, version FROM "items" WHERE id = $1;
+		SELECT  record, version FROM "`+f.table+`" WHERE id = $1;
 	`, id)
 
 	record := []byte{}
@@ -189,7 +191,7 @@ func (f *InPostgres[T]) Get(ctx context.Context, id string) (*ItemWithId[T], err
 func (f *InPostgres[T]) Delete(ctx context.Context, id string) error {
 
 	_, err := f.db.ExecContext(ctx, `
-		DELETE FROM "items" 
+		DELETE FROM "`+f.table+`" 
 		WHERE id = $1;
 	`, id)
 	if err != nil {
