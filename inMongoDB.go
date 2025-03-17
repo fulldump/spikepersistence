@@ -11,12 +11,13 @@ import (
 )
 
 type InMongoDB[T any] struct {
-	connection string
-	client     *mongo.Client
-	database   *mongo.Database
+	collectionName string
+	connection     string
+	client         *mongo.Client
+	database       *mongo.Database
 }
 
-func NewInMongoDB[T any](connection string) (*InMongoDB[T], error) {
+func NewInMongoDB[T any](collectionName, connection string) (*InMongoDB[T], error) {
 
 	cs, err := connstring.ParseAndValidate(connection)
 	if err != nil {
@@ -38,7 +39,7 @@ func NewInMongoDB[T any](connection string) (*InMongoDB[T], error) {
 
 	// ensure unique "id" index for items :D
 	database := client.Database(databaseName)
-	_, err = database.Collection("items").Indexes().CreateOne(context.Background(), mongo.IndexModel{
+	_, err = database.Collection(collectionName).Indexes().CreateOne(context.Background(), mongo.IndexModel{
 		Keys: bson.M{"id": 1},
 	})
 	if err != nil {
@@ -46,15 +47,16 @@ func NewInMongoDB[T any](connection string) (*InMongoDB[T], error) {
 	}
 
 	return &InMongoDB[T]{
-		connection: connection,
-		client:     client, // might not be needed
-		database:   database,
+		collectionName: collectionName,
+		connection:     connection,
+		client:         client, // might not be needed
+		database:       database,
 	}, nil
 }
 
 func (f *InMongoDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 
-	cur, err := f.database.Collection("items").Find(ctx, bson.M{})
+	cur, err := f.database.Collection(f.collectionName).Find(ctx, bson.M{})
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +92,7 @@ func (f *InMongoDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 		},
 	}
 
-	result, err := f.database.Collection("items").UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
+	result, err := f.database.Collection(f.collectionName).UpdateOne(ctx, filter, update, options.Update().SetUpsert(true))
 
 	if mongo.IsDuplicateKeyError(err) {
 		return ErrVersionGone
@@ -109,7 +111,7 @@ func (f *InMongoDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 
 func (f *InMongoDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
 	result := &ItemWithId[T]{}
-	err := f.database.Collection("items").FindOne(ctx, bson.M{"id": id}).Decode(result)
+	err := f.database.Collection(f.collectionName).FindOne(ctx, bson.M{"id": id}).Decode(result)
 	if err == mongo.ErrNoDocuments {
 		return nil, nil
 	}
@@ -117,6 +119,6 @@ func (f *InMongoDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], erro
 }
 
 func (f *InMongoDB[T]) Delete(ctx context.Context, id string) error {
-	_, err := f.database.Collection("items").DeleteOne(ctx, bson.M{"id": id})
+	_, err := f.database.Collection(f.collectionName).DeleteOne(ctx, bson.M{"id": id})
 	return err
 }
