@@ -34,7 +34,7 @@ func TestInPostgres(t *testing.T) {
 
 	dbname := "test" + strconv.FormatInt(time.Now().UnixNano(), 10)
 
-	p, err := NewInPostgres[Item]("mytable", "host="+host+" port=5432 user=postgres password=mysecretpassword dbname="+dbname+" sslmode=disable")
+	p, err := NewInPostgres[TestItem]("mytable", "host="+host+" port=5432 user=postgres password=mysecretpassword dbname="+dbname+" sslmode=disable")
 	biff.AssertNil(err)
 
 	SuitePersistencer(p, t)

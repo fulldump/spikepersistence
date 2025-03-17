@@ -10,10 +10,10 @@ import (
 func TestInInception(t *testing.T) {
 
 	collection := "testing-" + uuid.NewString()
-	var p *InInceptionDB[Item]
+	var p *InInceptionDB[TestItem]
 
 	for _, base := range []string{"http://inceptiondb:1212/v1", "http://localhost:1212/v1"} {
-		p = NewInInceptionDB[Item](&ConfigInceptionDB{
+		p = NewInInceptionDB[TestItem](&ConfigInceptionDB{
 			Base:       base,
 			Collection: collection,
 		})

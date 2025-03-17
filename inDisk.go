@@ -12,12 +12,12 @@ import (
 	"strings"
 )
 
-type InDisk[T any] struct {
+type InDisk[T Identifier] struct {
 	dataDir string
 	cache   *InMemory[T]
 }
 
-func NewInDisk[T any](dataDir string) (*InDisk[T], error) {
+func NewInDisk[T Identifier](dataDir string) (*InDisk[T], error) {
 
 	// ensure dir
 	err := os.MkdirAll(dataDir, 0777)
@@ -48,7 +48,7 @@ func NewInDisk[T any](dataDir string) (*InDisk[T], error) {
 			return nil // todo. check if err should be returned
 		}
 
-		item := &ItemWithId[T]{}
+		var item *T
 		err = json.NewDecoder(f).Decode(item)
 		if err != nil {
 			log.Printf("error decoding '%s': %s\n", filename, err.Error())
@@ -67,13 +67,13 @@ func NewInDisk[T any](dataDir string) (*InDisk[T], error) {
 	}, nil
 }
 
-func (f *InDisk[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
+func (f *InDisk[T]) List(ctx context.Context) ([]*T, error) {
 	return f.cache.List(ctx)
 }
 
-func (f *InDisk[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
+func (f *InDisk[T]) Put(ctx context.Context, item *T) error {
 
-	filename := path.Join(f.dataDir, item.Id+".json")
+	filename := path.Join(f.dataDir, (*item).GetId()+".json")
 
 	fd, err := os.Create(filename)
 	if err != nil {
@@ -91,7 +91,7 @@ func (f *InDisk[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 	return f.cache.Put(ctx, item)
 }
 
-func (f *InDisk[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+func (f *InDisk[T]) Get(ctx context.Context, id string) (*T, error) {
 	return f.cache.Get(ctx, id)
 }
 
@@ -102,7 +102,7 @@ func (f *InDisk[T]) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("item '%s' does not exist", id)
 	}
 
-	filename := path.Join(f.dataDir, item.Id+".json")
+	filename := path.Join(f.dataDir, (*item).GetId()+".json")
 	err = os.Remove(filename)
 	if err != nil {
 		return fmt.Errorf("item '%s' persistence error: %s", id, err.Error())

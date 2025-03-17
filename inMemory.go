@@ -2,55 +2,53 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 )
 
-type InMemory[T any] struct {
-	Items map[string]*ItemWithId[T]
+type InMemory[T Identifier] struct {
+	Items map[string]*T
 	mutex sync.RWMutex
 }
 
-func NewInMemory[T any]() *InMemory[T] {
+func NewInMemory[T Identifier]() *InMemory[T] {
 	return &InMemory[T]{
-		Items: map[string]*ItemWithId[T]{},
+		Items: map[string]*T{},
 	}
 }
 
-func (f *InMemory[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
+func (f *InMemory[T]) List(ctx context.Context) ([]*T, error) {
 
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
-	result := make([]*ItemWithId[T], len(f.Items))
+	result := make([]*T, len(f.Items))
 
 	i := -1
-	for _, f := range f.Items {
+	for _, item := range f.Items {
 		i++
-		result[i] = f
+		result[i], _ = f.Get(ctx, (*item).GetId())
 	}
 
 	return result, nil
 }
 
-func (f *InMemory[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
+func (f *InMemory[T]) Put(ctx context.Context, item *T) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
-	if oldItem, ok := f.Items[item.Id]; ok {
-		if oldItem.Version != item.Version {
+	if oldItem, ok := f.Items[(*item).GetId()]; ok {
+		if (*oldItem).GetVersion() != (*item).GetVersion() {
 			return ErrVersionGone
 		}
 	}
 
-	f.Items[item.Id] = &ItemWithId[T]{
-		Id:      item.Id,
-		Item:    item.Item,
-		Version: item.Version + 1,
-	}
+	(*item).SetVersion((*item).GetVersion() + 1)
+	f.Items[(*item).GetId()] = item // todo: copy?
 	return nil
 }
 
-func (f *InMemory[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+func (f *InMemory[T]) Get(ctx context.Context, id string) (*T, error) {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
@@ -59,11 +57,16 @@ func (f *InMemory[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error
 		return nil, nil
 	}
 
-	return &ItemWithId[T]{
-		Id:      item.Id,
-		Item:    item.Item,
-		Version: item.Version,
-	}, nil
+	// Copy
+	var newItem *T
+	remarshal(item, &newItem)
+
+	return newItem, nil
+}
+
+func remarshal(in, out any) {
+	b, _ := json.Marshal(in)
+	_ = json.Unmarshal(b, &out)
 }
 
 func (f *InMemory[T]) Delete(ctx context.Context, id string) error {

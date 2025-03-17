@@ -17,12 +17,12 @@ type ConfigInceptionDB struct {
 	ApiSecret  string `json:"api_secret"`
 }
 
-type InInceptionDB[T any] struct {
+type InInceptionDB[T Identifier] struct {
 	config     *ConfigInceptionDB
 	httpClient *http.Client
 }
 
-func NewInInceptionDB[T any](config *ConfigInceptionDB) *InInceptionDB[T] {
+func NewInInceptionDB[T Identifier](config *ConfigInceptionDB) *InInceptionDB[T] {
 	if config.Collection == "" {
 		config.Collection = "items"
 	}
@@ -43,7 +43,7 @@ type FindQuery struct {
 	Reverse bool                   `json:"reverse,omitempty"`
 }
 
-func (p *InInceptionDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
+func (p *InInceptionDB[T]) List(ctx context.Context) ([]*T, error) {
 	query := FindQuery{
 		Filter: map[string]interface{}{},
 		Limit:  -1,
@@ -71,11 +71,11 @@ func (p *InInceptionDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 		return nil, errors.New("list: unexpected HTTP status: " + resp.Status)
 	}
 
-	var items []*ItemWithId[T]
+	var items []*T
 	decoder := json.NewDecoder(resp.Body)
 	// InceptionDB returns a stream of objects, one per line (JSON Lines)
 	for {
-		var item ItemWithId[T]
+		var item *T
 		err := decoder.Decode(&item)
 		if err == io.EOF {
 			break
@@ -83,23 +83,22 @@ func (p *InInceptionDB[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 		if err != nil {
 			return nil, err
 		}
-		items = append(items, &item)
+		items = append(items, item)
 	}
 	return items, nil
 }
 
-func (p *InInceptionDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
+func (p *InInceptionDB[T]) Put(ctx context.Context, item *T) error {
 
-	newItem := &ItemWithId[T]{
-		Id:      item.Id,
-		Item:    item.Item,
-		Version: item.Version + 1,
-	}
+	// TODO: copy? remarshal?
 
-	if item.Version == 0 {
+	itemVersion := (*item).GetVersion()
+	if itemVersion == 0 {
 		// Assume the document is new
 
-		payload, err := json.Marshal(newItem)
+		(*item).SetVersion(itemVersion + 1) // 1
+		payload, err := json.Marshal(item)
+		(*item).SetVersion(itemVersion) // restore
 		if err != nil {
 			return err
 		}
@@ -124,21 +123,23 @@ func (p *InInceptionDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 			return errors.New("put (insert): unexpected HTTP status: " + resp.Status)
 		}
 
-		item.Version++ // Update version in the original object
+		(*item).SetVersion(itemVersion + 1)
 		return nil
 	}
 
 	filter := map[string]interface{}{
-		"id":      item.Id,
-		"version": item.Version,
+		"id":      (*item).GetId(),
+		"version": (*item).GetVersion(),
 	}
 
 	// Use patch endpoint to update the document. The filter identifies id and actual version.
 	patchQuery := map[string]interface{}{
 		"filter": filter,
-		"patch":  newItem,
+		"patch":  item,
 	}
+	(*item).SetVersion(itemVersion + 1)
 	payload, err := json.Marshal(patchQuery)
+	(*item).SetVersion(itemVersion)
 	if err != nil {
 		return err
 	}
@@ -170,11 +171,11 @@ func (p *InInceptionDB[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 		return errors.New("put (patch): unexpected HTTP status: " + resp.Status)
 	}
 
-	item.Version++
+	(*item).SetVersion(itemVersion + 1)
 	return nil
 }
 
-func (p *InInceptionDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+func (p *InInceptionDB[T]) Get(ctx context.Context, id string) (*T, error) {
 	query := FindQuery{
 		Filter: map[string]interface{}{
 			"id": id,
@@ -205,7 +206,7 @@ func (p *InInceptionDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], 
 	}
 
 	decoder := json.NewDecoder(resp.Body)
-	var item ItemWithId[T]
+	var item *T
 	if err := decoder.Decode(&item); err != nil {
 		if err == io.EOF {
 			// Document not found
@@ -213,7 +214,7 @@ func (p *InInceptionDB[T]) Get(ctx context.Context, id string) (*ItemWithId[T], 
 		}
 		return nil, err
 	}
-	return &item, nil
+	return item, nil
 }
 
 func (p *InInceptionDB[T]) Delete(ctx context.Context, id string) error {

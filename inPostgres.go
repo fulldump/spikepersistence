@@ -9,13 +9,13 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type InPostgres[T any] struct {
+type InPostgres[T Identifier] struct {
 	table      string
 	connection string
 	db         *sql.DB
 }
 
-func NewInPostgres[T any](table, connection string) (*InPostgres[T], error) {
+func NewInPostgres[T Identifier](table, connection string) (*InPostgres[T], error) {
 
 	db, err := sql.Open("postgres", connection)
 	if err != nil {
@@ -99,14 +99,14 @@ func parseConnection(connection string) map[string]string {
 	return result
 }
 
-func (f *InPostgres[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
+func (f *InPostgres[T]) List(ctx context.Context) ([]*T, error) {
 
 	rows, err := f.db.QueryContext(ctx, `SELECT id, record, version FROM "`+f.table+`";`)
 	if err != nil {
 		return nil, err
 	}
 
-	result := []*ItemWithId[T]{}
+	result := []*T{}
 	for rows.Next() {
 		id := []byte{}
 		record := []byte{}
@@ -116,33 +116,31 @@ func (f *InPostgres[T]) List(ctx context.Context) ([]*ItemWithId[T], error) {
 			return nil, err
 		}
 
-		item := &ItemWithId[T]{
-			Id: string(id),
-			// Item:    T{},
-			Version: version,
-		}
-		err = json.Unmarshal(record, &item.Item)
+		var item *T
+		err = json.Unmarshal(record, &item)
 		if err != nil {
 			return nil, err
 		}
+		(*item).SetVersion(version)
 		result = append(result, item)
 	}
 
 	return result, nil
 }
 
-func (f *InPostgres[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
+func (f *InPostgres[T]) Put(ctx context.Context, item *T) error {
 
-	itemJson, err := json.Marshal(item.Item)
+	itemJson, err := json.Marshal(item)
 	if err != nil {
 		return err
 	}
 
+	itemVersion := (*item).GetVersion()
 	result, err := f.db.ExecContext(ctx, `
 		INSERT INTO "`+f.table+`" (id, record, version) VALUES ($1, $2::jsonb, $4)
 		ON CONFLICT (ID)
 		DO UPDATE SET record = $2, version = $4 WHERE `+f.table+`.version = $3
-	`, item.Id, string(itemJson), item.Version, item.Version+1)
+	`, (*item).GetId(), string(itemJson), itemVersion, itemVersion+1)
 	if err != nil {
 		return err
 	}
@@ -155,12 +153,12 @@ func (f *InPostgres[T]) Put(ctx context.Context, item *ItemWithId[T]) error {
 		return ErrVersionGone
 	}
 
-	item.Version++
+	(*item).SetVersion(itemVersion + 1)
 
 	return nil
 }
 
-func (f *InPostgres[T]) Get(ctx context.Context, id string) (*ItemWithId[T], error) {
+func (f *InPostgres[T]) Get(ctx context.Context, id string) (*T, error) {
 
 	row := f.db.QueryRowContext(ctx, `
 		SELECT  record, version FROM "`+f.table+`" WHERE id = $1;
@@ -176,14 +174,12 @@ func (f *InPostgres[T]) Get(ctx context.Context, id string) (*ItemWithId[T], err
 		return nil, err
 	}
 
-	item := &ItemWithId[T]{
-		Id:      id,
-		Version: version,
-	}
-	err = json.Unmarshal(record, &item.Item)
+	var item *T
+	err = json.Unmarshal(record, &item)
 	if err != nil {
 		return nil, err
 	}
+	(*item).SetVersion(version)
 
 	return item, nil
 }
