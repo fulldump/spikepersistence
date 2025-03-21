@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type ConfigInceptionDB struct {
@@ -27,8 +28,20 @@ func NewInInceptionDB[T Identifier](config *ConfigInceptionDB) *InInceptionDB[T]
 		config.Collection = "items"
 	}
 	result := &InInceptionDB[T]{
-		config:     config,
-		httpClient: http.DefaultClient,
+		config: config,
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				MaxConnsPerHost:     100,
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     60 * time.Second,
+
+				// chatgpt recommendation :D
+				ResponseHeaderTimeout: time.Second * 10, // Espera de respuesta
+				TLSHandshakeTimeout:   time.Second * 5,  // Timeout en handshake TLS
+				ExpectContinueTimeout: time.Second * 1,  // Timeout en "100-Continue"
+			},
+		},
 	}
 	result.dropCollection()
 	result.ensureCollection()

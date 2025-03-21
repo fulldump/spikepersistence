@@ -24,5 +24,5 @@ func TestInInception(t *testing.T) {
 	}
 
 	SuitePersistencer(p, t)
-	// SuiteOptimisticLocking(p, t) // working on this!
+	SuiteOptimisticLocking(p, t) // working on this!
 }
